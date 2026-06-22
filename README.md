@@ -1,6 +1,8 @@
-# Lottie Lab iOS App
+# Lottie Lab
 
-A comprehensive iOS application for testing, viewing, and editing Lottie animations.
+Lottie Lab is an iOS motion QA and export tool for Lottie animations. The
+current prototype supports JSON import, playback, basic color inspection, and
+JSON/GIF export. Cross-version comparison and MP4 export are planned.
 
 ## Features
 
@@ -27,8 +29,8 @@ A comprehensive iOS application for testing, viewing, and editing Lottie animati
 ## Getting Started
 
 ### Prerequisites
-- Xcode 15.0 or later
-- iOS 17.0 or later
+- Xcode 16.4 or later
+- iOS 17.5 or later
 - Swift 5.0
 
 ### Installation
@@ -130,4 +132,5 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for local setup, tests, and CI details.
 
 ## License
 
-This project is for educational and demonstration purposes. Lottie iOS library is subject to its own license terms.
+Lottie Lab is available under the MIT License. Lottie iOS is subject to its
+own license terms.
