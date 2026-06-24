@@ -2,7 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct BundledAnimationsView: View {
-    @Binding var selectedAnimationURL: URL?
+    let onSelectAnimation: (URL) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var showingFilePicker = false
     @State private var loadingAnimation: String? = nil
@@ -137,7 +137,7 @@ struct BundledAnimationsView: View {
         
         // Provide immediate feedback
         DispatchQueue.main.async {
-            self.selectedAnimationURL = animationURL
+            self.onSelectAnimation(animationURL)
             
             // Clear loading state and dismiss after a brief moment
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
@@ -254,7 +254,7 @@ struct BundledAnimationsView: View {
             
             // Set the animation URL to the final file location
             DispatchQueue.main.async {
-                self.selectedAnimationURL = finalURL
+                self.onSelectAnimation(finalURL)
                 self.isImporting = false
                 self.dismiss()
             }

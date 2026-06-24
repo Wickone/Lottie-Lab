@@ -23,3 +23,38 @@ jobs:
             -scheme LottieLab \
             -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
             CODE_SIGNING_ALLOWED=NO
+
+  lottie-version-matrix:
+    name: Snapshot build · Lottie ${{ matrix.version }}
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: 3.0.0
+            scheme: Lottie300
+          - version: 3.5.0
+            scheme: Lottie350
+          - version: 4.0.0
+            scheme: Lottie400
+          - version: 4.6.1
+            scheme: Lottie461
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+
+      - name: Build isolated Lottie module
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project LottieLab.xcodeproj \
+            -scheme '${{ matrix.scheme }}' \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath '${{ runner.temp }}/Lottie-${{ matrix.version }}' \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES

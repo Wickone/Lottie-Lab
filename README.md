@@ -1,8 +1,8 @@
 # Lottie Lab
 
 Lottie Lab is an iOS motion QA and export tool for Lottie animations. The
-current prototype supports JSON import, playback, basic color inspection, and
-JSON/GIF export. Cross-version comparison and MP4 export are planned.
+current prototype supports JSON import, playback, basic color inspection,
+cross-version rendering, and JSON/GIF export. MP4 export is planned.
 
 ## Features
 
@@ -15,8 +15,10 @@ JSON/GIF export. Cross-version comparison and MP4 export are planned.
 - **Export**: Save animations as JSON or GIF
 
 ### ✏️ Animation Editor
-- **Layer Management**: View and select individual animation layers
-- **Color Editing**: Modify colors for background and layers
+- **Color Editing**: Modify static and keyframed fill/stroke colors
+- **Precomp Support**: Discover and update colors inside asset layers
+- **Persistent Draft**: Applied edits remain when the editor is reopened
+- **Real Background**: Background is exported as a Lottie solid layer
 - **Transform Controls**: Adjust scale, rotation, and opacity per layer
 - **Real-time Preview**: See changes instantly in the preview window
 - **Property Inspector**: Fine-tune animation properties
@@ -25,6 +27,12 @@ JSON/GIF export. Cross-version comparison and MP4 export are planned.
 - **Import Support**: JSON file import via document picker
 - **Export Options**: JSON and GIF export capabilities
 - **Share Integration**: Built-in iOS sharing for exported files
+
+### 🧪 Runtime Comparison
+- **Format version**: Displays the animation's `v` field
+- **Renderer test**: Compares Core Animation and Main Thread side by side
+- **Library matrix**: CI builds Lottie iOS 3.0.0, 3.5.0, 4.0.0, and 4.6.1
+- **In-app versions**: Switch Lottie iOS 3.0.0, 3.5.0, 4.0.0, and 4.6.1
 
 ## Getting Started
 
@@ -35,7 +43,7 @@ JSON/GIF export. Cross-version comparison and MP4 export are planned.
 
 ### Installation
 1. Open `LottieLab.xcodeproj` in Xcode
-2. The Lottie framework will be automatically resolved via Swift Package Manager
+2. Xcode will resolve the local `Vendor/LottieVersions` package
 3. Build and run the project
 
 ### Project Structure
@@ -77,7 +85,7 @@ LottieLab/
 
 - **Lottie iOS**: Animation rendering and playback
   - GitHub: https://github.com/airbnb/lottie-ios
-  - Version: 4.4.3+
+  - Comparison versions: exactly 3.0.0, 3.5.0, 4.0.0, and 4.6.1
 
 ## Building and Testing
 
@@ -107,8 +115,9 @@ xcodebuild -project LottieLab.xcodeproj -scheme LottieLab -destination 'platform
 
 ### Architecture
 - **SwiftUI** for the application interface
-- **Lottie iOS 4.5.2** for animation rendering
-- View-local state in the current prototype; document/model separation is planned
+- Four namespaced Lottie iOS modules plus isolated CI matrix builds
+- **AnimationDocument** as the shared source of truth for original JSON,
+  metadata, edits, diagnostics, preview data, and export data
 
 ### Performance Considerations
 - Animations are loaded asynchronously

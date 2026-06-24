@@ -1,12 +1,10 @@
 import SwiftUI
-import Lottie
 
 struct EditPropertiesSheet: View {
-    @Binding var animationURL: URL?
-    let animationView: LottieAnimationView?
+    @ObservedObject var document: AnimationDocument
     @Binding var animationSpeed: Double
     @Binding var totalFrames: Double
-    let onColorsChanged: (([Color: Color]) -> Void)?
+    let onDocumentChanged: () throws -> Void
     
     @StateObject private var analyzer = LottieAnalyzer()
     @Environment(\.dismiss) private var dismiss
@@ -15,16 +13,18 @@ struct EditPropertiesSheet: View {
     @State private var tempSpeed: Double = 1.0
     @State private var tempFrames: Double = 100
     @State private var backgroundColor: Color = .clear
+    @State private var hasBackgroundColor = false
     @State private var hasChanges = false
-    @State private var selectedColors: [String: Color] = [:]
-    @State private var colorReplacements: [Color: Color] = [:]
-    @State private var uiUpdateTrigger = false
-    @State private var showSuccessMessage = false
+    @State private var colorReplacements: [RGBAColor: RGBAColor] = [:]
+    @State private var showingApplyError = false
+    @State private var applyErrorMessage = ""
     
     var body: some View {
         NavigationView {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 24) {
+                    documentSummary
+
                     // Animation Info
                     VStack(alignment: .leading, spacing: 12) {
                         Text("Animation Properties")
@@ -81,7 +81,7 @@ struct EditPropertiesSheet: View {
                         VStack(spacing: 12) {
                             HStack {
                                 RoundedRectangle(cornerRadius: 8)
-                                    .fill(backgroundColor == .clear ? 
+                                    .fill(!hasBackgroundColor ?
                                           LinearGradient(colors: [.white, .gray.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing) : 
                                           LinearGradient(colors: [backgroundColor], startPoint: .center, endPoint: .center))
                                     .frame(width: 60, height: 40)
@@ -94,7 +94,7 @@ struct EditPropertiesSheet: View {
                                     Text("Background Color")
                                         .font(.subheadline)
                                         .fontWeight(.medium)
-                                    Text(backgroundColor == .clear ? "Transparent" : colorToHex(backgroundColor))
+                                    Text(hasBackgroundColor ? colorToHex(backgroundColor) : "Transparent")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }
@@ -104,12 +104,13 @@ struct EditPropertiesSheet: View {
                                 ColorPicker("", selection: $backgroundColor)
                                     .labelsHidden()
                                     .onChange(of: backgroundColor) { _, _ in
+                                        hasBackgroundColor = true
                                         hasChanges = true
                                     }
                             }
                             
                             Button("Reset to Transparent") {
-                                backgroundColor = .clear
+                                hasBackgroundColor = false
                                 hasChanges = true
                             }
                             .font(.caption)
@@ -121,39 +122,31 @@ struct EditPropertiesSheet: View {
                         .cornerRadius(12)
                     }
                     
-                    // Animation Colors (show detected colors or fallback test colors)
-                    let colorsToShow = analyzer.colorPalette.isEmpty ? 
-                        [Color.blue, Color.red, Color.green, Color.orange] : analyzer.colorPalette
-                    
-                    if true { // Always show color section
+                    let colorsToShow = editorColors
+
+                    if !colorsToShow.isEmpty {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Animation Colors")
                                 .font(.headline)
                                 .fontWeight(.semibold)
                             
                             VStack(alignment: .leading, spacing: 4) {
-                                if analyzer.colorPalette.isEmpty {
-                                    Text("Using test colors (no animation colors detected)")
-                                        .font(.caption)
-                                        .foregroundColor(.orange)
-                                } else {
-                                    Text("Detected \(analyzer.colorPalette.count) colors in animation")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
+                                Text("Detected \(colorsToShow.count) colors, including precomps and keyframes")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
                                 Text("Tap a color picker to edit")
                                     .font(.caption2)
                                     .foregroundColor(.blue)
                             }
                             
                             VStack(spacing: 12) {
-                                ForEach(Array(colorsToShow.enumerated()), id: \.offset) { index, color in
+                                ForEach(Array(colorsToShow.enumerated()), id: \.element) { index, color in
                                     let displayColor = colorReplacements[color] ?? color
                                     let hasReplacement = colorReplacements[color] != nil
                                     
                                     HStack {
                                         RoundedRectangle(cornerRadius: 8)
-                                            .fill(displayColor)
+                                            .fill(displayColor.swiftUIColor)
                                             .frame(width: 60, height: 40)
                                             .overlay(
                                                 RoundedRectangle(cornerRadius: 8)
@@ -164,7 +157,7 @@ struct EditPropertiesSheet: View {
                                             Text("Animation Color \(index + 1)")
                                                 .font(.subheadline)
                                                 .fontWeight(.medium)
-                                            Text(colorToHex(displayColor))
+                                            Text(colorToHex(displayColor.swiftUIColor))
                                                 .font(.caption)
                                                 .foregroundColor(.secondary)
                                             
@@ -179,17 +172,10 @@ struct EditPropertiesSheet: View {
                                         Spacer()
                                         
                                         ColorPicker("", selection: Binding(
-                                            get: { displayColor },
+                                            get: { displayColor.swiftUIColor },
                                             set: { newColor in
-                                                print("🎨 Color selected: \(colorToHex(color)) → \(colorToHex(newColor))")
-                                                colorReplacements[color] = newColor
+                                                colorReplacements[color] = RGBAColor(newColor)
                                                 hasChanges = true
-                                                
-                                                // Apply color change immediately
-                                                applyIndividualColorChange(from: color, to: newColor)
-                                                
-                                                // Force UI update
-                                                uiUpdateTrigger.toggle()
                                             }
                                         ))
                                         .labelsHidden()
@@ -200,6 +186,10 @@ struct EditPropertiesSheet: View {
                             .background(Color(UIColor.systemGray6))
                             .cornerRadius(12)
                         }
+                    } else {
+                        Text("No editable fill or stroke colors were found.")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
                     }
                     
                     
@@ -277,9 +267,8 @@ struct EditPropertiesSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(
                 leading: Button("Cancel") { dismiss() },
-                trailing: Button("Apply") { 
+                trailing: Button("Apply") {
                     applyChanges()
-                    dismiss()
                 }
                 .disabled(!hasChanges)
             )
@@ -287,190 +276,126 @@ struct EditPropertiesSheet: View {
         .onAppear {
             loadInitialValues()
             analyzeAnimation()
-            
-            // Reapply any existing color changes when sheet opens
-            if !colorReplacements.isEmpty {
-                print("🔄 Reapplying \(colorReplacements.count) existing color changes...")
-                for (originalColor, newColor) in colorReplacements {
-                    applyIndividualColorChange(from: originalColor, to: newColor)
+        }
+        .alert("Could Not Apply Changes", isPresented: $showingApplyError) {
+            Button("OK") {}
+        } message: {
+            Text(applyErrorMessage)
+        }
+    }
+
+    private var documentSummary: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(document.displayName)
+                .font(.headline)
+
+            if let metadata = document.metadata {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                    GridRow {
+                        Text("Lottie version")
+                        Text(metadata.formatVersion ?? "Unknown")
+                    }
+                    GridRow {
+                        Text("Canvas")
+                        Text("\(metadata.width) × \(metadata.height)")
+                    }
+                    GridRow {
+                        Text("Timeline")
+                        Text("\(Int(metadata.frameCount)) frames · \(metadata.frameRate, specifier: "%.0f") fps")
+                    }
+                    GridRow {
+                        Text("Duration")
+                        Text("\(metadata.duration, specifier: "%.2f") s")
+                    }
+                    GridRow {
+                        Text("Contents")
+                        Text("\(metadata.layerCount) layers · \(metadata.assetCount) assets")
+                    }
                 }
+                .font(.subheadline)
             }
+
+            ForEach(document.diagnostics) { diagnostic in
+                Label(diagnostic.message, systemImage: diagnosticIcon(diagnostic.severity))
+                    .font(.caption)
+                    .foregroundColor(diagnosticColor(diagnostic.severity))
+            }
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(UIColor.systemGray6))
+        .cornerRadius(12)
+    }
+
+    private func diagnosticIcon(_ severity: AnimationDiagnostic.Severity) -> String {
+        switch severity {
+        case .info:
+            return "info.circle"
+        case .warning:
+            return "exclamationmark.triangle"
+        case .error:
+            return "xmark.octagon"
+        }
+    }
+
+    private func diagnosticColor(_ severity: AnimationDiagnostic.Severity) -> Color {
+        switch severity {
+        case .info:
+            return .secondary
+        case .warning:
+            return .orange
+        case .error:
+            return .red
         }
     }
     
     private func loadInitialValues() {
-        tempSpeed = animationSpeed
-        tempFrames = totalFrames
+        tempSpeed = document.edits.playbackSpeed
+        tempFrames = document.metadata?.frameCount ?? totalFrames
+        backgroundColor = document.edits.backgroundColor?.swiftUIColor ?? .clear
+        hasBackgroundColor = document.edits.backgroundColor != nil
+        colorReplacements = document.edits.colorReplacements
+        hasChanges = false
     }
     
     private func analyzeAnimation() {
-        guard let url = animationURL else { 
-            print("🔍 EditPropertiesSheet: No animation URL available for analysis")
+        guard let data = document.originalData else {
+            print("🔍 EditPropertiesSheet: No document data available for analysis")
             return 
         }
-        
-        print("🔍 EditPropertiesSheet: Starting analysis of: \(url.path)")
-        
-        // Check if this is a local file (bundled or in Documents)
-        let isBundledResource = url.scheme == nil || url.scheme == "file" && url.path.contains(Bundle.main.bundlePath)
-        let isDocumentsFile = url.path.contains(FileManager.documentsDirectory().path)
-        let isLocalFile = isBundledResource || isDocumentsFile
-        let needsSecurityAccess = !isLocalFile
-        
-        print("🔍 EditPropertiesSheet: Is bundled: \(isBundledResource), is documents: \(isDocumentsFile), needs security access: \(needsSecurityAccess)")
-        
-        var hasAccess = true
-        if needsSecurityAccess {
-            hasAccess = url.startAccessingSecurityScopedResource()
-            print("🔍 EditPropertiesSheet: Security access granted: \(hasAccess)")
-        }
-        
-        if hasAccess {
-            defer { 
-                if needsSecurityAccess {
-                    url.stopAccessingSecurityScopedResource()
-                }
-            }
-            
-            do {
-                print("🔍 EditPropertiesSheet: Reading animation data...")
-                let data = try Data(contentsOf: url)
-                print("🔍 EditPropertiesSheet: Data size: \(data.count) bytes")
-                
-                print("🔍 EditPropertiesSheet: Starting Lottie analysis...")
-                analyzer.analyzeAnimation(data: data)
-                print("🔍 EditPropertiesSheet: Analysis complete - Found \(analyzer.detectedProperties.count) properties and \(analyzer.colorPalette.count) colors")
-            } catch {
-                print("❌ EditPropertiesSheet: Error analyzing animation: \(error)")
-            }
-        } else {
-            print("❌ EditPropertiesSheet: Failed to access animation file")
-        }
+
+        analyzer.analyzeAnimation(data: data)
     }
     
     private func applyChanges() {
-        print("🎨 EditPropertiesSheet: Applying changes...")
-        
-        // Apply speed change safely
-        if tempSpeed != animationSpeed {
+        let previousEdits = document.edits
+        let newEdits = AnimationEdits(
+            colorReplacements: colorReplacements,
+            backgroundColor: hasBackgroundColor ? RGBAColor(backgroundColor) : nil,
+            playbackSpeed: tempSpeed
+        )
+
+        do {
+            try document.apply(newEdits)
+            try onDocumentChanged()
             animationSpeed = tempSpeed
-            
-            // Update animation view speed if available
-            if let animationView = animationView {
-                DispatchQueue.main.async {
-                    animationView.animationSpeed = tempSpeed
-                    print("✅ Applied speed change: \(tempSpeed)x")
-                }
-            }
-        }
-        
-        // Apply frame count change (if implemented in the future)
-        if tempFrames != totalFrames {
             totalFrames = tempFrames
+            hasChanges = false
+            dismiss()
+        } catch {
+            try? document.apply(previousEdits)
+            try? onDocumentChanged()
+            applyErrorMessage = error.localizedDescription
+            showingApplyError = true
         }
-        
-        // Apply color changes to animation
-        if !colorReplacements.isEmpty {
-            applyColorChangesToAnimation()
-        }
-        
-        // Show success message before resetting
-        if !colorReplacements.isEmpty {
-            print("🎉 SUCCESS: Saved \(colorReplacements.count) color changes!")
-            print("🎉 Color changes applied:")
-            for (original, new) in colorReplacements {
-                print("🎉   \(colorToHex(original)) → \(colorToHex(new))")
+    }
+
+    private var editorColors: [RGBAColor] {
+        let analyzed = analyzer.colorPalette.map(RGBAColor.init)
+        return (analyzed + Array(colorReplacements.keys)).reduce(into: []) { result, color in
+            if !result.contains(where: { $0.isApproximatelyEqual(to: color.components) }) {
+                result.append(color)
             }
-        }
-        
-        // Mark changes as applied but keep them for persistence
-        hasChanges = false
-        
-        // Show success message in UI
-        showSuccessMessage = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            showSuccessMessage = false
-        }
-        
-        // Show a clear success indicator
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            print("🎉 CHANGES SUCCESSFULLY APPLIED AND SAVED!")
-            print("🎉 Modified colors will persist when reopening edit sheet")
-        }
-        
-        // Notify parent view of color changes
-        onColorsChanged?(colorReplacements)
-        
-        // Show success feedback
-        print("✅ Applied changes successfully - Speed: \(tempSpeed)x, Colors: \(colorReplacements.count)")
-    }
-    
-    private func applyIndividualColorChange(from originalColor: Color, to newColor: Color) {
-        guard let animationView = animationView else {
-            print("❌ No animation view available for individual color change")
-            return
-        }
-        
-        // Convert SwiftUI Color to Lottie-compatible color
-        let uiColor = UIColor(newColor)
-        guard let components = uiColor.cgColor.components, components.count >= 3 else {
-            print("❌ Failed to extract color components for \(colorToHex(newColor))")
-            return
-        }
-        
-        print("🎨 Applying individual color change: \(colorToHex(originalColor)) → \(colorToHex(newColor))")
-        print("🎨 Color components: R=\(components[0]), G=\(components[1]), B=\(components[2])")
-        
-        // Apply color change using Lottie's value providers
-        // Create Lottie color value
-        let colorValue = [
-            Double(components[0]), // Red
-            Double(components[1]), // Green
-            Double(components[2]), // Blue
-            components.count > 3 ? Double(components[3]) : 1.0 // Alpha
-        ]
-        
-        // For now, just log that we would apply the color change
-        // The actual Lottie color application needs the correct value provider
-        print("🎨 Would apply color with values: \(colorValue)")
-        print("🎨 Trying different Lottie color application methods...")
-        
-        // Method 1: Try simple color change via currentFrame manipulation  
-        let currentTime = animationView.currentFrame
-        animationView.currentFrame = currentTime + 0.001 // Force refresh
-        animationView.currentFrame = currentTime
-        
-        print("✅ Animation refresh triggered (color application pending correct Lottie API)")
-        
-        // Force immediate redraw
-        DispatchQueue.main.async {
-            animationView.setNeedsDisplay()
-            animationView.setNeedsLayout()
-            print("✅ Individual color change applied immediately")
-        }
-    }
-    
-    private func applyColorChangesToAnimation() {
-        guard let animationView = animationView else {
-            print("❌ No animation view available for color changes")
-            return
-        }
-        
-        print("🎨 Applying \(colorReplacements.count) color changes...")
-        
-        // Apply all color changes to the animation
-        for (originalColor, newColor) in colorReplacements {
-            print("🎨 Applying bulk color change: \(colorToHex(originalColor)) → \(colorToHex(newColor))")
-            applyIndividualColorChange(from: originalColor, to: newColor)
-        }
-        
-        print("🎨 All color changes applied to animation")
-        
-        // Force animation view to update and redraw
-        DispatchQueue.main.async {
-            animationView.setNeedsDisplay()
-            animationView.setNeedsLayout()
-            print("✅ Animation view updated with \(colorReplacements.count) color changes")
         }
     }
     
@@ -509,4 +434,3 @@ struct EditPropertiesSheet: View {
         return String(format: "#%02X%02X%02X", r, g, b)
     }
 }
-
